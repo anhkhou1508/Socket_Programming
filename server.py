@@ -8,6 +8,7 @@ server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
 connected_clients = {}
 channels = {}
 
+#start server by listening and accept new connection
 def start_server():
     server_socket.bind((SERVER_HOST, SERVER_PORT))
     server_socket.listen(5)
@@ -15,8 +16,10 @@ def start_server():
     while True:
         client_socket, address = server_socket.accept()
         print(f"New connection from {address}")
+        #handle commands from clients in a separate thread
         threading.Thread(target=handle_command, args=(client_socket, address)).start()
 
+#handle possible command from clients
 def handle_command(client_socket, address):
     nickname = ""
     current_channel = None
@@ -25,6 +28,7 @@ def handle_command(client_socket, address):
             data = client_socket.recv(1024).decode().strip()
             if not data:
                 break
+            #handle NICK command
             if data.startswith("NICK"):
                 new_nickname = data.split()[1]
                 if new_nickname in connected_clients:
@@ -34,13 +38,17 @@ def handle_command(client_socket, address):
                 connected_clients[nickname] = client_socket
                 client_socket.sendall(f"Welcome {nickname}! You've been registered.\r\n".encode())
 
+            #handle USER command
             elif data.startswith("USER"):
                 client_socket.sendall("User registered successfully.\r\n".encode())
 
+            #handle JOIN command
             elif data.startswith("JOIN"):
                 channel = data.split()[1]
+                #create channel if if doesnt exist
                 if channel not in channels:
                     channels[channel] = []
+                #add user to channel if they not already in
                 if nickname not in channels[channel]:
                     channels[channel].append(nickname)
                     current_channel = channel
@@ -58,6 +66,7 @@ def handle_command(client_socket, address):
     except socket.error as e:
         print(f"Error handling client {address}: {e}")
     finally:
+    #remove user from the connected clients and channels
         if nickname in connected_clients:
             del connected_clients[nickname]
             if current_channel and nickname in channels[current_channel]:
