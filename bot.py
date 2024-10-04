@@ -143,7 +143,10 @@ class IRC_bot:
     def handle_command(self, received_message):
         command = received_message[1].strip()  # Get the command part
         if command == "!hello":
-            self.send_message(self.CHANNEL, f"Hi everyone! I'm {self.NICKNAME}. What can I help you with today?")
+            self.send_message(self.CHANNEL, f"Hi everyone! I'm {self.NICKNAME}.")
+            self.send_message(self.CHANNEL, "Choose the following option to")
+            self.send_message(self.CHANNEL, "|!slap| to slap someone =))")
+            self.send_message(self.CHANNEL, "|!tempchannel| (space) |#channel name| to create a temporary channel")
         elif command.startswith("!slap"):
             parts = command.split()
             if len(parts) > 1:
@@ -157,7 +160,7 @@ class IRC_bot:
         elif command.startswith("!tempchannel"):
             parts = command.split()
             if len(parts) > 1:
-                temp_channel_name = f"#{parts[1].lstrip('#')}"  
+                temp_channel_name = parts[1]
                 self.create_temp_channel(temp_channel_name)
             else:
                 self.send_message(self.CHANNEL, "Usage: !tempchannel <channel_name>")
@@ -173,13 +176,14 @@ class IRC_bot:
 
         self.temporary_channels[channel_name] = True
         self.bot_socket.sendall(f"JOIN {channel_name}\r\n".encode())
-        self.send_message(self.CHANNEL, f"Temporary channel {channel_name} created! It will expire in 15 seconds.")
+        self.send_message(self.CHANNEL, f"Temporary channel {channel_name} created! It will expire in 15 seconds. Therefore, join fastttttttttt")
         threading.Thread(target=self.expire_temp_channel, args=(channel_name,)).start()
 
     def expire_temp_channel(self, channel_name):
         time.sleep(15)  # Wait for 15 seconds
         if channel_name in self.temporary_channels:
             del self.temporary_channels[channel_name]
+            self.bot_socket.sendall(f"PART {channel_name}\r\n".encode())
             self.send_message(self.CHANNEL, f"Temporary channel {channel_name} has expired!")
             print(f"Temporary channel {channel_name} has expired.")
             
