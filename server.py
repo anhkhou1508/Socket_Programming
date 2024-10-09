@@ -1,5 +1,6 @@
 import socket
 import threading
+import time
 
 SERVER_HOST = "::1"
 SERVER_PORT = 6667
@@ -47,29 +48,33 @@ def handle_command(client_socket, data, nickname, current_channel):
     if data.startswith("NICK"):
         new_nickname = data.split()[1]
         if new_nickname in connected_clients:
-            client_socket.sendall("Nickname already in use. Please choose another.\r\n".encode())
+            client_socket.sendall("433 * :Nickname already in use. Please choose another.\r\n".encode())  # ERR_NICKNAMEINUSE (433)
         else:
             if nickname:
-                client_socket.sendall(f"You are now known as {new_nickname}.\r\n".encode())
+                client_socket.sendall(f":{SERVER_HOST} 001 {new_nickname} :You are now known as {new_nickname}.\r\n".encode())
                 del connected_clients[nickname]
             else:
-                client_socket.sendall(f"Welcome {new_nickname}! You've been registered.\r\n".encode())
+                client_socket.sendall(f":{SERVER_HOST} 001 {new_nickname} :Welcome to the IRC network, {new_nickname}!\r\n".encode())
+                client_socket.sendall(f":{SERVER_HOST} 002 {new_nickname} :Your host is {SERVER_HOST}, running version 1.0\r\n".encode())  # RPL_YOURHOST
+                client_socket.sendall(f":{SERVER_HOST} 003 {new_nickname} :This server was created {time.ctime()}\r\n".encode())  # RPL_CREATED
+                client_socket.sendall(f":{SERVER_HOST} 004 {new_nickname} {SERVER_HOST} 1.0 iowgh\r\n".encode())  # RPL_MYINFO
+
             nickname = new_nickname
             connected_clients[nickname] = client_socket
 
     elif data.startswith("USER"):
         parts = data.split(" ", 4)
         if len(parts) < 5:
-            client_socket.sendall("ERROR: Invalid USER command. Expected format: USER <username> <hostname> <servername> <realname>\r\n".encode())
+            client_socket.sendall("461 * USER :Not enough parameters\r\n".encode())  # ERR_NEEDMOREPARAMS (461)
         else:
             username = parts[1]
             realname = parts[4][1:]  # Remove the leading colon from realname
             user_details[nickname] = {"username": username, "realname": realname}
-            client_socket.sendall(f"USER command accepted. Welcome {realname} ({username})!\r\n".encode())
+            client_socket.sendall(f":{SERVER_HOST} 001 {nickname} :USER command accepted. Welcome {realname} ({username})!\r\n".encode())
 
     elif data.startswith("JOIN"):
         if not nickname:
-            client_socket.sendall("ERROR: You must set a nickname before joining a channel.\r\n".encode())
+            client_socket.sendall("451 * :You have not registered\r\n".encode())  # ERR_NOTREGISTERED (451)
         else:
             channel = data.split()[1]
             if channel not in channels:
@@ -80,23 +85,22 @@ def handle_command(client_socket, data, nickname, current_channel):
                 # Notify others in the channel that a new user has joined
                 for user in channels[channel]:
                     if user != nickname:
-                        connected_clients[user].sendall(f"{nickname} has joined {channel}\r\n".encode())
-                
+                        connected_clients[user].sendall(f":{nickname} JOIN {channel}\r\n".encode())
+
                 # Send a join message to the user
                 client_socket.sendall(f":{nickname} JOIN {current_channel}\r\n".encode())
-                client_socket.sendall(f"You have joined {channel}\r\n".encode())
-                client_socket.sendall(f"{nickname} joined {channel}\r\n".encode())  # Notify the user
-                
-                # Send the list of users in the channel to all users in the channel
-                user_list = ", ".join(channels[channel])
-                for user in channels[channel]:
-                    connected_clients[user].sendall(f"Users in {channel}: {user_list}\r\n".encode())
+                # RPL_NAMREPLY (353) and RPL_ENDOFNAMES (366) to list channel members
+                user_list = " ".join(channels[channel])
+                client_socket.sendall(f":{SERVER_HOST} 353 {nickname} = {channel} :{user_list}\r\n".encode())  # RPL_NAMREPLY
+                client_socket.sendall(f":{SERVER_HOST} 366 {nickname} {channel} :End of /NAMES list.\r\n".encode())  # RPL_ENDOFNAMES
             else:
-                client_socket.sendall(f"You are already in {channel}.\r\n".encode())
+                client_socket.sendall(f":{SERVER_HOST} 443 {nickname} {channel} :You're already in the channel\r\n".encode())  # ERR_USERONCHANNEL (443)
+
     else:
-        client_socket.sendall("Unknown command!\r\n".encode())
-    
+        client_socket.sendall(f":{SERVER_HOST} 421 {nickname} {data.split()[0]} :Unknown command\r\n".encode())  # ERR_UNKNOWNCOMMAND (421)
+
     return nickname, current_channel
+
 
 def main():
     start_server()
