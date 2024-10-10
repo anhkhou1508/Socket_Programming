@@ -86,15 +86,15 @@ def handle_command(client_socket, data, nickname, current_channel):
                         channels[current_channel].remove(nickname)
                         for user in channels[current_channel]:
                             connected_clients[user].sendall(f":{nickname} PART {current_channel} :Leaving\r\n".encode())
-                            send_message_tochannel(current_channel, f"You have left channel {current_channel}.")
-                        client_socket.sendall(f":{nickname} PART {current_channel} :Leaving.\r\n".encode())
+                            send_message_tochannel(current_channel, f"{nickname} have left channel {current_channel}.")
+                        client_socket.sendall(f":{nickname} PART {current_channel} :Leaving...\r\n".encode())
                 
                 # Notify leaving on previouse connected channel
                 for previouse_channel in list(channels.keys()):
                     if nickname in channels[previouse_channel]:
                         channels[previouse_channel].remove(nickname)
-                        send_message_tochannel(previouse_channel, f"You have left channel {previouse_channel}.")
-                        client_socket.sendall(f":{nickname} PART {previouse_channel} :Leaving\r\n".encode())
+                        send_message_tochannel(previouse_channel, f"{nickname} have left channel {previouse_channel}.")
+                        client_socket.sendall(f":{nickname} PART {previouse_channel} :Leaving...\r\n".encode())
                 current_channel = None
                 return nickname, current_channel
             
