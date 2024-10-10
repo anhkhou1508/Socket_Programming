@@ -40,15 +40,17 @@ def handle_clients(client_socket, address):
         if current_channel and nickname in channels[current_channel]:
             channels[current_channel].remove(nickname)
             for user in channels[current_channel]:
-                connected_clients[user].sendall(f"{nickname} has left {current_channel}\r\n".encode())
+                connected_clients[user].sendall(f":{nickname} QUIT :Leaving\r\n".encode())
         client_socket.close()
 
 # Handle commands from clients
 def handle_command(client_socket, data, nickname, current_channel):
+    if data.startswith("PING"):
+        client_socket.sendall(f":{SERVER_HOST} PONG {SERVER_HOST} :".encode())
     if data.startswith("NICK"):
         new_nickname = data.split()[1]
         if new_nickname in connected_clients:
-            client_socket.sendall("433 * :Nickname already in use. Please choose another.\r\n".encode())  # ERR_NICKNAMEINUSE (433)
+            client_socket.sendall(f":{SERVER_HOST} 433 {nickname} {new_nickname} :Nickname already in use.\r\n".encode())  # ERR_NICKNAMEINUSE (433)
         else:
             if nickname:
                 client_socket.sendall(f":{SERVER_HOST} 001 {new_nickname} :You are now known as {new_nickname}.\r\n".encode())
@@ -65,41 +67,66 @@ def handle_command(client_socket, data, nickname, current_channel):
     elif data.startswith("USER"):
         parts = data.split(" ", 4)
         if len(parts) < 5:
-            client_socket.sendall("461 * USER :Not enough parameters\r\n".encode())  # ERR_NEEDMOREPARAMS (461)
+            client_socket.sendall(f":{SERVER_HOST} 461 {nickname} :Not enough parameters\r\n".encode())  
         else:
             username = parts[1]
-            realname = parts[4][1:]  # Remove the leading colon from realname
+            realname = parts[4][1:]  
             user_details[nickname] = {"username": username, "realname": realname}
             client_socket.sendall(f":{SERVER_HOST} 001 {nickname} :USER command accepted. Welcome {realname} ({username})!\r\n".encode())
 
     elif data.startswith("JOIN"):
         if not nickname:
-            client_socket.sendall("451 * :You have not registered\r\n".encode())  # ERR_NOTREGISTERED (451)
+            client_socket.sendall(f":{SERVER_HOST} 451 :You have not registered\r\n".encode())
         else:
             channel = data.split()[1]
-            if channel not in channels:
-                channels[channel] = []
-            if nickname not in channels[channel]:
-                channels[channel].append(nickname)
-                current_channel = channel
-                # Notify others in the channel that a new user has joined
-                for user in channels[channel]:
-                    if user != nickname:
-                        connected_clients[user].sendall(f":{nickname} JOIN {channel}\r\n".encode())
-
-                # Send a join message to the user
-                client_socket.sendall(f":{nickname} JOIN {current_channel}\r\n".encode())
-                # RPL_NAMREPLY (353) and RPL_ENDOFNAMES (366) to list channel members
-                user_list = " ".join(channels[channel])
-                client_socket.sendall(f":{SERVER_HOST} 353 {nickname} = {channel} :{user_list}\r\n".encode())  # RPL_NAMREPLY
-                client_socket.sendall(f":{SERVER_HOST} 366 {nickname} {channel} :End of /NAMES list.\r\n".encode())  # RPL_ENDOFNAMES
+            if channel.startswith("0"):
+                #Notify leaving on current channel
+                if current_channel: 
+                    if nickname in channels[current_channel]:
+                        channels[current_channel].remove(nickname)
+                        for user in channels[current_channel]:
+                            connected_clients[user].sendall(f":{nickname} PART {current_channel} :Leaving\r\n".encode())
+                            send_message_tochannel(current_channel, f"You have left channel {current_channel}.")
+                        client_socket.sendall(f":{nickname} PART {current_channel} :Leaving.\r\n".encode())
+                
+                # Notify leaving on previouse connected channel
+                for previouse_channel in list(channels.keys()):
+                    if nickname in channels[previouse_channel]:
+                        channels[previouse_channel].remove(nickname)
+                        send_message_tochannel(previouse_channel, f"You have left channel {previouse_channel}.")
+                        client_socket.sendall(f":{nickname} PART {previouse_channel} :Leaving\r\n".encode())
+                current_channel = None
+                return nickname, current_channel
+            
+            elif channel.startswith("#"):
+                if channel not in channels:
+                    channels[channel] = []
+                if nickname not in channels[channel]:
+                    channels[channel].append(nickname)
+                    current_channel = channel
+                    for user in channels[channel]:
+                        if user != nickname:
+                            connected_clients[user].sendall(f":{nickname} JOIN {channel}\r\n".encode())
+                    client_socket.sendall(f":{nickname} JOIN {current_channel}\r\n".encode())
+                    user_list = " ".join(channels[channel])
+                    client_socket.sendall(f":{SERVER_HOST} 353 {nickname} = {channel} :{user_list}\r\n".encode()) 
+                    client_socket.sendall(f":{SERVER_HOST} 366 {nickname} {channel} :End of /NAMES list.\r\n".encode())  
+                    send_message_tochannel(channel, f"Users in channel {channel}: {user_list}")
+                else: 
+                    client_socket.sendall(f":{SERVER_HOST} 443 {nickname} {channel} :You're already in the channel\r\n".encode()) 
             else:
-                client_socket.sendall(f":{SERVER_HOST} 443 {nickname} {channel} :You're already in the channel\r\n".encode())  # ERR_USERONCHANNEL (443)
-
+                client_socket.sendall(f":{SERVER_HOST} 403 {nickname} {channel} :No such channel\r\n".encode())
     else:
-        client_socket.sendall(f":{SERVER_HOST} 421 {nickname} {data.split()[0]} :Unknown command\r\n".encode())  # ERR_UNKNOWNCOMMAND (421)
+        client_socket.sendall(f":{SERVER_HOST} 421 {nickname} {data.split()[0]} :Unknown command\r\n".encode()) 
+    return nickname, current_channel                
+                
+                
 
-    return nickname, current_channel
+def send_message_tochannel(channel, message):
+    if channel in channels:
+        for user in channels[channel]:
+            connected_clients[user].sendall(f":{SERVER_HOST} PRIVMSG {channel} :{message}\r\n".encode())
+
 
 
 def main():
